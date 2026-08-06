@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NinjaOne Control Panel — Demo</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-brand">NinjaOne <span>Control Panel</span></div>
+    <div class="topbar-right">
+      <span class="topbar-user">admin</span>
+      <button class="btn btn-ghost btn-sm">Sign out</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- Left panel -->
+    <div class="panel">
+      <h2>Instances</h2>
+
+      <div class="instance-row">
+        <div class="instance-row-header">
+          <span class="instance-name">Contoso EU</span>
+          <div class="instance-row-actions">
+            <button class="btn btn-ghost btn-sm">Test</button>
+            <button class="btn btn-danger btn-sm">Delete</button>
+          </div>
+        </div>
+        <div class="instance-meta">
+          <span>https://eu.ninjarmm.com</span>
+          <span>Client ID: <span style="color:var(--text-muted);font-size:11px;font-family:monospace;">abc***xyz</span></span>
+          <span>Scope: management control monitoring</span>
+        </div>
+      </div>
+
+      <div class="instance-row">
+        <div class="instance-row-header">
+          <span class="instance-name">Fabrikam US</span>
+          <div class="instance-row-actions">
+            <span class="badge badge-ok" style="margin-right:4px;">&#10003; OK</span>
+            <button class="btn btn-ghost btn-sm">Test</button>
+            <button class="btn btn-danger btn-sm">Delete</button>
+          </div>
+        </div>
+        <div class="instance-meta">
+          <span>https://app.ninjarmm.com</span>
+          <span>Client ID: <span style="color:var(--text-muted);font-size:11px;font-family:monospace;">def***uvw</span></span>
+          <span>Scope: management control monitoring</span>
+        </div>
+      </div>
+
+      <div class="instance-row">
+        <div class="instance-row-header">
+          <span class="instance-name">Northwind AU</span>
+          <div class="instance-row-actions">
+            <button class="btn btn-ghost btn-sm">Test</button>
+            <button class="btn btn-danger btn-sm">Delete</button>
+          </div>
+        </div>
+        <div class="instance-meta">
+          <span>https://oc.ninjarmm.com</span>
+          <span>Client ID: <span style="color:var(--text-muted);font-size:11px;font-family:monospace;">ghi***rst</span></span>
+          <span>Scope: management control monitoring</span>
+        </div>
+      </div>
+
+      <button class="collapsible-trigger" style="margin-top:8px;">
+        + Add instance <span class="arrow">&#9662;</span>
+      </button>
+    </div>
+
+    <!-- Right content -->
+    <div class="content">
+      <div class="instance-select-row">
+        <label>Active instance:</label>
+        <select style="max-width:280px;">
+          <option>Contoso EU</option>
+          <option selected>Fabrikam US</option>
+          <option>Northwind AU</option>
+        </select>
+      </div>
+
+      <div class="tabs">
+        <button class="tab-btn" data-tab="end-users">End Users</button>
+        <button class="tab-btn active" data-tab="devices">Devices</button>
+        <button class="tab-btn" data-tab="technicians">Technicians</button>
+        <button class="tab-btn" data-tab="report">Device-User Report</button>
+      </div>
+
+      <!-- Devices tab shown as active for demo -->
+      <div class="tab-pane active" id="tab-devices">
+        <div class="section-heading">Find device <span>Fabrikam US</span></div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <input type="text" value="DESKTOP-" style="max-width:340px;" />
+          <button class="btn btn-primary">Search</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>ID</th><th>Hostname</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>10241</td><td>DESKTOP-A1B2C3</td></tr>
+              <tr><td>10242</td><td>DESKTOP-D4E5F6</td></tr>
+              <tr><td>10243</td><td>DESKTOP-G7H8I9</td></tr>
+              <tr><td>10244</td><td>DESKTOP-J1K2L3</td></tr>
+              <tr><td>10245</td><td>DESKTOP-M4N5O6</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="section-heading" style="margin-top:32px;">End users <span style="color:var(--text-muted);">— search result</span></div>
+        <pre class="result-box">[
+  {
+    "id": 5501,
+    "firstName": "Alice",
+    "lastName": "Johnson",
+    "email": "alice.johnson@fabrikam.com",
+    "accessibleDeviceIds": [10241, 10243]
+  },
+  {
+    "id": 5502,
+    "firstName": "Bob",
+    "lastName": "Smith",
+    "email": "bob.smith@fabrikam.com",
+    "accessibleDeviceIds": [10242]
+  }
+]</pre>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
