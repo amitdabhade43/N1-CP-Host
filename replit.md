@@ -1,6 +1,6 @@
-# [Project name]
+# NinjaOne Control Panel
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A secure, self-hosted multi-tenant web app for NinjaOne RMM automation. Lets you onboard multiple NinjaOne instances (tenants), each with its own API credentials, and run user/device management actions against whichever instance you select.
 
 ## Run & Operate
 

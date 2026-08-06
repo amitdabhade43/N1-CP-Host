@@ -1,0 +1,112 @@
+Build a secure, self-hosted web app called NinjaOne Control Panel — a multi-tenant control panel for NinjaOne RMM automation. It lets me onboard multiple NinjaOne instances (tenants), each with its own API credentials, and run user/device management actions against whichever instance I select, instead of running separate PowerShell scripts per tenant.
+
+Stack
+Node.js + Express backend
+Plain HTML/CSS/vanilla JS frontend — no build step, no frontend framework
+No database needed — use an encrypted JSON file on disk for credential storage (details below)
+Core concept: multi-tenant instance vault
+
+Each "instance" represents one NinjaOne tenant and has:
+
+name — display name, e.g. "Contoso EU"
+apiBase — e.g. https://eu.ninjarmm.com
+authUrl — the OAuth token endpoint host, e.g. https://remote.rmmservice.eu (can differ from apiBase — some NinjaOne deployments use a separate/white-labeled auth domain)
+clientId
+clientSecret
+scope — defaults to "management control monitoring"
+
+Store these encrypted at rest, not in plaintext:
+
+Use Node's built-in crypto module, AES-256-GCM.
+Derive the encryption key with scrypt from an environment variable called MASTER_KEY plus a randomly generated salt that gets created once and saved to disk (e.g. data/vault.salt) — never derive the key from MASTER_KEY alone without a salt.
+The encrypted vault lives at data/vault.enc.json. Never write MASTER_KEY itself to disk.
+On Replit, MASTER_KEY and SESSION_SECRET (see below) should be set using Replit Secrets (the Secrets panel / .env equivalent), not hardcoded and not committed.
+When listing instances via the API, never return clientSecret — only return a masked version of clientId (show first 3 and last 3 characters, mask the middle) plus the non-sensitive fields.
+The web app needs its own login (separate from NinjaOne credentials)
+A single admin account (username + password), password hashed with bcrypt (use bcryptjs, pure JS, no native build step — important for Replit's environment).
+Provide a small CLI/setup script (or a one-time setup route/page if a script won't work well on Replit's workflow — your call, but a script run via the Replit shell is preferred) to create the admin account interactively, storing the bcrypt hash in data/admin-users.json.
+Session-based auth using express-session:
+httpOnly: true
+sameSite: "strict"
+secure: true when NODE_ENV=production (Replit serves over HTTPS, so this should be true in the deployed environment)
+Session secret from a SESSION_SECRET environment variable (Replit Secret), fail fast at startup if it's missing or under 32 characters.
+Add CSRF protection: on login, generate a random CSRF token, store it server-side in the session, require the frontend to echo it back in an X-CSRF-Token header on every POST/PUT/PATCH/DELETE request. Reject state-changing requests without a matching token (403).
+Rate-limit the login endpoint (e.g. 10 attempts per 15 minutes per IP) using express-rate-limit. Also apply a general rate limit to all /api routes (e.g. 120 requests/minute).
+Add helmet for security headers, including a Content-Security-Policy that only allows 'self' for scripts/styles/connect (plus 'unsafe-inline' for styles only, since there's no build step).
+All API routes except /auth/* and static files must require an authenticated session.
+Audit logging
+
+Every meaningful action (login, instance added/deleted/tested, user created, device searched, report generated) gets appended as a JSON line to data/audit.log, containing: timestamp, the logged-in username, the action name, and non-sensitive details (instance id, email searched, etc.). Never log clientSecret, passwords, or access tokens.
+
+NinjaOne API integration details (get these right — they're the result of real trial-and-error)
+
+Build a ninjaClient module that, given an instance's credentials, can:
+
+Authenticate — POST {authUrl}/ws/oauth/token, form-urlencoded body: grant_type=client_credentials, client_id, client_secret, scope. Cache the returned access_token in memory per-instance, keyed by instance id, and refresh it a bit before it actually expires (use expires_in from the response, refresh ~30 seconds early). Throw a clear error if access_token is missing from the response.
+List all devices, paginated correctly: GET {apiBase}/v2/devices?pageSize={n}&after={lastDeviceId}. This is cursor-based pagination on the last device ID, not a page number — do not use a page= query param, it will silently return the same page forever. Loop: start with after=0, fetch a page, if you get a full page (length === pageSize) set after to the id of the last device in that batch and fetch again; stop when you get a short/empty page. Use pageSize=1000 unless testing shows a lower cap is enforced.
+Device fields: devices come back with id (numeric) and systemName (hostname) — use these exact field names, not deviceId/hostname.
+Find a device by name: try an exact case-insensitive match on systemName first; if no exact match, fall back to a case-insensitive substring match; if multiple partial matches, return all of them (don't guess) so the caller can disambiguate.
+List all end users: GET {apiBase}/v2/user/end-users.
+Device↔user relationship — important: the relationship lives on the end user object, not the device object. Each end user has an accessibleDeviceIds array field listing device IDs assigned to them. This is a genuine many-to-many relationship (one device can appear in multiple users' accessibleDeviceIds, and one user can have many device IDs). To build a device-user mapping report: fetch all devices once, fetch all end users once, build a Map from device id → device object, then for each user iterate their accessibleDeviceIds and join against the device map. If a referenced device id isn't found in the device map, still include the row with a hostname of "(device not found)" rather than silently dropping it — don't call the per-device or per-user endpoint in a loop, fetch both lists once and join in memory.
+Create an end user: POST {apiBase}/v2/user/end-users?sendInvitation=false, JSON body { firstName, lastName, email }.
+Create a technician: POST {apiBase}/v2/user/technicians?sendInvitation=false, same body shape.
+List roles: GET {apiBase}/v2/user/roles. Each role has a type field (END_USER or TECHNICIAN) and a name.
+Assign a role to a newly created user: PATCH {apiBase}/v2/user/role/{roleId}/add-members, JSON body is an array containing the new user's id, e.g. [userId].
+Always set Content-Type: application/json explicitly on every authenticated JSON request — don't rely on it being picked up automatically from a headers object.
+Wrap every outbound NinjaOne API call in proper error handling so a failure returns a clean error message (with the HTTP status code and NinjaOne's response body) rather than crashing the server process.
+API routes to build
+POST /auth/login — { username, password } → sets session, returns { ok, username, csrfToken }. Rate-limited.
+POST /auth/logout — destroys session.
+GET /auth/session — returns { authenticated, username, csrfToken } if logged in, else { authenticated: false }.
+GET /api/instances — list instances (masked, no secrets). Requires auth.
+POST /api/instances — add a new instance { name, apiBase, authUrl, clientId, clientSecret, scope }. Requires auth + CSRF.
+PATCH /api/instances/:id — update fields on an instance. Requires auth + CSRF.
+DELETE /api/instances/:id — remove an instance. Requires auth + CSRF.
+POST /api/instances/:id/test — attempt to authenticate against that instance right now, return success/failure with a clear message. Requires auth + CSRF.
+GET /api/actions/:instanceId/end-users/search?email=... — search end users by email.
+POST /api/actions/:instanceId/end-users — { firstName, lastName, email, roleName? }; if roleName is provided, look up the matching END_USER role and assign it after creation, reporting whether the role assignment succeeded.
+POST /api/actions/:instanceId/technicians — same shape as above but for technicians/TECHNICIAN roles.
+GET /api/actions/:instanceId/roles — list roles for that instance.
+GET /api/actions/:instanceId/devices/search?name=... — find device(s) by name.
+GET /api/actions/:instanceId/device-user-mapping — returns the full mapping report as JSON by default; if called with ?format=csv, return it as a downloadable CSV file (Content-Disposition: attachment) with columns DeviceId,Hostname,OS,UserId,FirstName,LastName,UserEmail. Properly quote/escape CSV values.
+GET /health — simple { ok: true }, no auth required (useful for Replit's uptime checks).
+Frontend
+
+Two static pages served from a public/ folder:
+
+login.html — username/password form, posts to /auth/login, stores the returned csrfToken in sessionStorage, redirects to /index.html on success, shows a clear inline error on failure.
+index.html — the main dashboard, after confirming an active session (redirect to login if not authenticated):
+Instances panel: lists onboarded instances (name, apiBase, masked client ID), with "Test" and "Delete" buttons per row, and a collapsible "Add instance" form for the fields above. Never display the client secret after saving.
+Actions panel: a dropdown to pick the active instance, and tabs for:
+End users: search by email (shows JSON results), and a create-end-user form (first name, last name, email, optional role name).
+Technicians: create-technician form, same shape.
+Find device: search by name/partial name, shows matches.
+Device-user report: a button to view the mapping as an HTML table in the page, and a button to download it as CSV.
+
+Keep the styling clean and simple (flat surfaces, no gradients/shadows, a dark theme is fine) — this is an internal tool, not a marketing site. All frontend fetch calls to non-GET endpoints must include the X-CSRF-Token header using the token obtained at login/session-check.
+
+Environment variables (Replit Secrets)
+MASTER_KEY — random 32+ byte hex string, encrypts the credential vault. Generate with node -e "console.log(require('crypto').randomBytes(32).toString('hex'))".
+SESSION_SECRET — random 32+ byte hex string, signs session cookies. Generate the same way.
+PORT — Replit typically injects this automatically; fall back to 3000 if not set.
+NODE_ENV — set to production in the deployed Repl.
+
+The server should refuse to start with a clear error message if MASTER_KEY or SESSION_SECRET are missing or too short — don't silently fall back to an insecure default.
+
+Files to exclude from version control
+
+.gitignore should include node_modules/, .env, data/, and *.log — the data/ folder (vault, salt, admin users, audit log) must never be committed.
+
+Testing before you consider this done
+
+After building it, actually run it and verify:
+
+The server starts and fails clearly if MASTER_KEY/SESSION_SECRET are missing.
+You can create an admin user and log in.
+A POST to /api/instances without the CSRF header is rejected (403); with the correct header it succeeds.
+After adding a test instance, cat data/vault.enc.json shows only ciphertext — the plaintext client secret must not appear anywhere in that file.
+Hitting any /api/instances or /api/actions route without a valid session returns 401.
+The device-user mapping report correctly returns (device not found) rows instead of crashing when a user references a stale device id.
+Be upfront about limitations in the README
+
+Include a short README section noting: this uses a single shared admin login (not per-user RBAC), an in-memory session store (fine for one process, would need Redis if scaled to multiple instances), and an encrypted local vault file rather than a dedicated secrets manager like Key Vault/Vault — reasonable for a small internal tool, but note it as a possible future upgrade path rather than overstating current security guarantees.
