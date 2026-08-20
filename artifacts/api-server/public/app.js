@@ -107,12 +107,12 @@ function renderInstances() {
         escHtml(inst.name) +
         "</span>" +
         '<div class="instance-row-actions">' +
-        '<button class="btn btn-ghost btn-sm" onclick="testInstance(\'' +
+        '<button class="btn btn-ghost btn-sm" data-action="test" data-id="' +
         inst.id +
-        "')\">Test</button>" +
-        '<button class="btn btn-danger btn-sm" onclick="deleteInstance(\'' +
+        '">Test</button>' +
+        '<button class="btn btn-danger btn-sm" data-action="delete" data-id="' +
         inst.id +
-        "')\">Delete</button>" +
+        '">Delete</button>' +
         "</div>" +
         "</div>" +
         '<div class="instance-meta">' +
@@ -194,9 +194,9 @@ document
   });
 
 // Test instance
-window.testInstance = async function (id) {
+async function testInstance(id) {
   const row = document.getElementById("inst-" + id);
-  const btn = row.querySelector('[onclick*="testInstance"]');
+  const btn = row.querySelector('[data-action="test"]');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
   const res = await apiFetch("/api/instances/" + id + "/test", {
@@ -213,53 +213,48 @@ window.testInstance = async function (id) {
   const existing = row.querySelector(".badge");
   if (existing) existing.remove();
   row.querySelector(".instance-row-header").appendChild(badge);
-};
+}
 
 // Delete instance
-// window.deleteInstance = async function(id) {
-//   if (!confirm('Delete this instance? This cannot be undone.')) return;
-//   const res = await apiFetch('/api/instances/' + id, { method: 'DELETE' });
-//   if (!res) return;
-//   if (!res.ok) { alert('Failed to delete instance'); return; }
-//   loadInstances();
-// };
-
-// Delete instance
-window.deleteInstance = function (id) {
+async function deleteInstance(id) {
   const row = document.getElementById("inst-" + id);
-  const btn = row.querySelector('[onclick*="deleteInstance"]');
-  if (btn.dataset.confirming === "true") return; // already showing confirm state
+  const btn = row.querySelector('[data-action="delete"]');
 
-  const originalText = btn.textContent;
-  btn.dataset.confirming = "true";
-  btn.textContent = "Confirm?";
-  btn.classList.add("btn-confirm");
+  if (btn.dataset.confirming !== "true") {
+    btn.dataset.confirming = "true";
+    btn.textContent = "Confirm?";
+    setTimeout(function () {
+      if (btn.dataset.confirming === "true") {
+        btn.dataset.confirming = "false";
+        btn.textContent = "Delete";
+      }
+    }, 4000);
+    return;
+  }
 
-  const reset = function () {
+  btn.disabled = true;
+  const res = await apiFetch("/api/instances/" + id, { method: "DELETE" });
+  if (!res) return;
+  if (!res.ok) {
+    btn.disabled = false;
     btn.dataset.confirming = "false";
-    btn.textContent = originalText;
-    btn.classList.remove("btn-confirm");
-    btn.removeEventListener("click", onConfirmClick);
-  };
+    btn.textContent = "Delete";
+    alert("Failed to delete instance");
+    return;
+  }
+  loadInstances();
+}
 
-  const onConfirmClick = async function (e) {
-    e.stopImmediatePropagation();
-    btn.removeEventListener("click", onConfirmClick);
-    btn.disabled = true;
-    const res = await apiFetch("/api/instances/" + id, { method: "DELETE" });
-    if (!res) return;
-    if (!res.ok) {
-      btn.disabled = false;
-      reset();
-      alert("Failed to delete instance");
-      return;
-    }
-    loadInstances();
-  };
-
-  btn.addEventListener("click", onConfirmClick, { once: true });
-  setTimeout(reset, 4000); // auto-cancel if not confirmed within 4s
-};
+// Event delegation for instance row buttons (CSP-safe, no inline onclick)
+document
+  .getElementById("instances-list")
+  .addEventListener("click", function (e) {
+    const btn = e.target.closest("[data-action]");
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.action === "test") testInstance(id);
+    else if (btn.dataset.action === "delete") deleteInstance(id);
+  });
 
 // ===== Tabs =====
 document.querySelectorAll(".tab-btn").forEach(function (btn) {
